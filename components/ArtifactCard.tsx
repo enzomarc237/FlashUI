@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -10,12 +11,14 @@ interface ArtifactCardProps {
     artifact: Artifact;
     isFocused: boolean;
     onClick: () => void;
+    index: number;
 }
 
 const ArtifactCard = React.memo(({ 
     artifact, 
     isFocused, 
-    onClick 
+    onClick,
+    index
 }: ArtifactCardProps) => {
     const codeRef = useRef<HTMLPreElement>(null);
 
@@ -28,10 +31,16 @@ const ArtifactCard = React.memo(({
 
     const isBlurring = artifact.status === 'streaming';
 
+    // Calculate staggered delay (100ms per card)
+    const staggerStyle = {
+        '--stagger-delay': `${index * 100}ms`
+    } as React.CSSProperties;
+
     return (
         <div 
             className={`artifact-card ${isFocused ? 'focused' : ''} ${isBlurring ? 'generating' : ''}`}
             onClick={onClick}
+            style={staggerStyle}
         >
             <div className="artifact-header">
                 <span className="artifact-style-tag">{artifact.styleName}</span>

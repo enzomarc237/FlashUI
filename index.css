@@ -1,3 +1,4 @@
+
 /* index.css - Immersive "Radical" Redesign */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono&display=swap');
@@ -32,24 +33,21 @@ html, body {
     flex-direction: column;
 }
 
-/* === Immersive App Container === */
-.immersive-app {
-    flex: 1;
-    position: relative;
+/* === Top Nav Bar === */
+.top-nav-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 60px;
     display: flex;
-    flex-direction: column;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    perspective: 1500px;
-    overflow: hidden;
+    padding: 0 24px;
+    z-index: 101;
+    pointer-events: none;
 }
 
-/* === Creator Credit === */
-.creator-credit {
-    position: fixed;
-    top: 24px;
-    right: 24px;
-    z-index: 101; /* Above input and cards, but below drawer (200) */
+.creator-credit-nav {
+    pointer-events: auto;
     color: var(--text-secondary);
     font-size: 0.85rem;
     text-decoration: none;
@@ -63,12 +61,46 @@ html, body {
     backdrop-filter: blur(4px);
 }
 
-.creator-credit:hover {
+.creator-credit-nav:hover {
     opacity: 1;
     color: var(--text-primary);
     background: rgba(255, 255, 255, 0.05);
     border-color: rgba(255, 255, 255, 0.1);
+}
+
+.library-nav-toggle {
+    pointer-events: auto;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    padding: 8px 16px;
+    border-radius: 99px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: all 0.2s ease;
+}
+
+.library-nav-toggle:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
     transform: translateY(1px);
+}
+
+/* === Immersive App Container === */
+.immersive-app {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    perspective: 1500px;
+    overflow: hidden;
 }
 
 /* === Stage (The Deck) === */
@@ -90,7 +122,6 @@ html, body {
     color: var(--text-secondary);
     opacity: 1;
     transform: scale(1);
-    /* Transition opacity/transform first, then toggle visibility so it's gone */
     transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), 
                 transform 0.8s cubic-bezier(0.4, 0, 0.2, 1),
                 visibility 0s linear 0.8s;
@@ -109,7 +140,6 @@ html, body {
     transform: scale(1.1);
     visibility: hidden;
     pointer-events: none;
-    /* Reset transition delay for visibility so it hides AFTER fade */
 }
 
 .empty-content {
@@ -225,7 +255,7 @@ html, body {
 
 /* Mode: Focus (Grid behaves differently) */
 .stage-container.mode-focus .artifact-grid {
-    pointer-events: none; /* Let clicks pass through empty space */
+    pointer-events: none;
 }
 
 /* === Artifact Card === */
@@ -240,10 +270,25 @@ html, body {
     transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
     box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);
     transform-origin: center center;
-    pointer-events: auto; /* Re-enable pointer events for the cards */
+    pointer-events: auto;
+    opacity: 0;
+    animation: cardEntrance 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    animation-delay: var(--stagger-delay, 0ms);
 }
 
-/* Header in Split Mode */
+@keyframes cardEntrance {
+    0% {
+        opacity: 0;
+        transform: translateY(30px) scale(0.95);
+        filter: blur(10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+    }
+}
+
 .artifact-header {
     padding: 12px 16px;
     border-bottom: 1px solid var(--border-color);
@@ -259,9 +304,15 @@ html, body {
 }
 
 .artifact-card:hover {
-    border-color: rgba(255,255,255,0.3);
-    transform: translateY(-4px);
-    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7);
+    border-color: rgba(255,255,255,0.4);
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 30px 60px -15px rgba(0,0,0,0.8);
+    z-index: 50;
+}
+
+.artifact-card.focused {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 30px rgba(255,255,255,0.15);
 }
 
 .artifact-card-inner {
@@ -271,7 +322,7 @@ html, body {
 
 .artifact-iframe {
     width: 100%; height: 100%; border: none; display: block;
-    pointer-events: none; /* Interact only in Focus mode */
+    pointer-events: none;
 }
 
 /* === Focus Mode Styles === */
@@ -282,39 +333,25 @@ html, body {
 }
 
 .stage-container.mode-focus .artifact-card.focused {
-    position: fixed; /* Break out of grid */
+    position: fixed;
     top: 50%; left: 50%;
     width: 90vw; max-width: 1200px;
     height: 85vh;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) !important;
     z-index: 100;
     opacity: 1;
     pointer-events: auto;
     box-shadow: 0 50px 100px -20px rgba(0,0,0,0.8);
     border-color: rgba(255,255,255,0.1);
     cursor: default;
+    animation: none;
 }
 
-/* CRITICAL FIX for mobile fixed-positioning drift: Remove perspective/transform from parents when in focus mode */
-.stage-container.mode-focus {
-    perspective: none !important;
-}
-.stage-container.mode-focus .session-group.active-session {
-    transform: none !important;
-    transform-style: flat !important;
-}
-.stage-container.mode-focus .artifact-grid {
-    transform: none !important;
-    perspective: none !important;
-}
-
-.stage-container.mode-focus .artifact-card.focused .artifact-header {
-    display: none; /* Hide header in full screen mode for immersion */
-}
-
-.stage-container.mode-focus .artifact-card.focused .artifact-iframe {
-    pointer-events: auto; /* Enable interaction */
-}
+.stage-container.mode-focus { perspective: none !important; }
+.stage-container.mode-focus .session-group.active-session { transform: none !important; transform-style: flat !important; }
+.stage-container.mode-focus .artifact-grid { transform: none !important; perspective: none !important; }
+.stage-container.mode-focus .artifact-card.focused .artifact-header { display: none; }
+.stage-container.mode-focus .artifact-card.focused .artifact-iframe { pointer-events: auto; }
 
 /* === Generating State === */
 .artifact-card.generating {
@@ -330,6 +367,16 @@ html, body {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
+}
+
+.generating-overlay::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    background-size: 100% 2px, 3px 100%;
+    pointer-events: none;
+    z-index: 21;
+    opacity: 0.3;
 }
 
 .code-stream-preview {
@@ -405,7 +452,6 @@ html, body {
     100% { opacity: 0.7; transform: translateY(0); filter: blur(0); }
 }
 
-/* Shimmer Loading */
 .input-wrapper.loading { border-color: transparent; box-shadow: 0 0 25px -5px rgba(255, 255, 255, 0.3); }
 .input-wrapper.loading::before {
     content: ''; 
@@ -414,7 +460,6 @@ html, body {
     left: -100%; 
     width: 100%; 
     height: 100%;
-    /* Creates a soft band of light */
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
     animation: shimmerMove 2s infinite linear; 
     pointer-events: none;
@@ -430,16 +475,15 @@ html, body {
 }
 .input-wrapper input::placeholder { color: transparent; } 
 
-/* Styles for loading prompt text */
 .input-generating-label {
     flex: 1;
     display: flex;
     align-items: center;
-    justify-content: space-between; /* Space text left, spinner right */
+    justify-content: space-between;
     gap: 12px;
     color: var(--text-secondary);
     overflow: hidden;
-    padding-right: 8px; /* Extra breathing room for the spinner */
+    padding-right: 8px;
 }
 
 .generating-prompt-text {
@@ -486,7 +530,7 @@ html, body {
     max-width: 80vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     backdrop-filter: blur(8px); pointer-events: auto;
 }
-.action-buttons { display: flex; gap: 12px; pointer-events: auto; }
+.action-buttons { display: flex; gap: 12px; pointer-events: auto; flex-wrap: wrap; justify-content: center; }
 .action-buttons button {
     background: var(--input-bg);
     border: 1px solid var(--border-color);
@@ -503,6 +547,11 @@ html, body {
     background: rgba(255,255,255,0.15);
     border-color: rgba(255,255,255,0.3);
     transform: translateY(-2px);
+}
+
+.action-buttons button.save-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 /* === Navigation Handles === */
@@ -523,7 +572,7 @@ html, body {
     z-index: 200; display: flex; justify-content: flex-end;
 }
 .drawer-content {
-    width: 100%; max-width: 420px;
+    width: 100%; max-width: 480px;
     background: rgba(9, 9, 11, 0.85);
     backdrop-filter: blur(24px) saturate(180%);
     -webkit-backdrop-filter: blur(24px) saturate(180%);
@@ -548,6 +597,139 @@ html, body {
 }
 .close-button:hover { background: rgba(255,255,255,0.2); color: var(--text-primary); }
 .drawer-body { flex: 1; overflow-y: auto; padding: 24px; }
+
+/* === Save Dialog Form === */
+.save-dialog-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.form-group label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+.form-group input {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    outline: none;
+    transition: border-color 0.2s;
+}
+.form-group input:focus {
+    border-color: rgba(255, 255, 255, 0.3);
+}
+.confirm-save-btn {
+    background: var(--text-primary);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    padding: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.confirm-save-btn:hover {
+    opacity: 0.9;
+}
+
+/* === CSS Editor === */
+.css-editor-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+.editor-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+.css-textarea {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 16px;
+    color: #4ade80;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+    white-space: pre;
+}
+.css-textarea:focus {
+    border-color: rgba(74, 222, 128, 0.4);
+}
+
+/* === Component Library === */
+.library-container {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+.library-section-title {
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    margin: 0 0 16px 0;
+    border-left: 2px solid var(--accent-color);
+    padding-left: 12px;
+}
+.library-items-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+.library-card {
+    background: rgba(255, 255, 255, 0.02);
+}
+.sexy-preview.mini {
+    height: 140px;
+}
+.sexy-preview.mini iframe {
+    transform: scale(0.2);
+    width: 500%;
+    height: 500%;
+}
+.sexy-label.mini {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    font-size: 0.75rem;
+}
+.delete-saved-btn {
+    background: transparent;
+    border: none;
+    color: #ef4444;
+    padding: 4px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+    opacity: 0.6;
+}
+.delete-saved-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    opacity: 1;
+}
+.empty-library-msg {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 40px 20px;
+    border: 1px dashed var(--glass-border);
+    border-radius: 12px;
+}
+
 .sexy-grid { display: flex; flex-direction: column; gap: 24px; }
 .sexy-card {
     background: rgba(255,255,255,0.03);
@@ -598,8 +780,7 @@ html, body {
 
 /* Responsive Grid for smaller screens */
 @media (max-width: 1024px) {
-    /* Hide creator credit when generation has started on mobile */
-    .creator-credit.hide-on-mobile {
+    .creator-credit-nav.hide-on-mobile {
         display: none !important;
     }
 
@@ -610,14 +791,13 @@ html, body {
         overflow-y: auto;
         display: flex;
         flex-direction: column;
-        padding: 40px 20px 160px 20px;
+        padding: 80px 20px 160px 20px;
         width: 100%;
         box-sizing: border-box;
         gap: 20px;
         -webkit-overflow-scrolling: touch;
     }
 
-    /* Disable scrolling of the grid completely when an item is focused to fix overscroll drift */
     .stage-container.mode-focus .artifact-grid {
         overflow-y: hidden !important;
         pointer-events: none;
@@ -633,13 +813,12 @@ html, body {
         font-size: 3.5rem;
     }
 
-    /* Adjust focused state for mobile to avoid cutoffs and center more cleanly */
     .stage-container.mode-focus .artifact-card.focused {
         width: 92vw;
         height: 65vh; 
         top: 40%;
         left: 50%;
-        transform: translate(-50%, -40%) !important; /* Force centering despite any parent shifts */
+        transform: translate(-50%, -40%) !important;
     }
 
     .action-bar {
@@ -658,7 +837,6 @@ html, body {
         bottom: 20px;
     }
 
-    /* Scaling previews in side drawer on mobile */
     .sexy-preview {
         height: 160px;
     }
@@ -666,5 +844,9 @@ html, body {
         width: 1000px;
         height: 640px;
         transform: scale(0.16); 
+    }
+
+    .library-items-grid {
+        grid-template-columns: 1fr;
     }
 }

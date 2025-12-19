@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -19,3 +20,11 @@ export interface Session {
 
 export interface ComponentVariation { name: string; html: string; }
 export interface LayoutOption { name: string; css: string; previewHtml: string; }
+
+export interface SavedComponent {
+    id: string;
+    name: string;
+    category: string;
+    html: string;
+    timestamp: number;
+}

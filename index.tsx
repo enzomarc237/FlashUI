@@ -7,10 +7,10 @@
 //Vibe coded by ammaar@google.com
 
 import { GoogleGenAI } from '@google/genai';
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 
-import { Artifact, Session, ComponentVariation, LayoutOption } from './types';
+import { Artifact, Session, ComponentVariation, LayoutOption, SavedComponent } from './types';
 import { INITIAL_PLACEHOLDERS } from './constants';
 import { generateId } from './utils';
 
@@ -25,7 +25,11 @@ import {
     ArrowRightIcon, 
     ArrowUpIcon, 
     GridIcon,
-    DownloadIcon
+    DownloadIcon,
+    EditIcon,
+    LibraryIcon,
+    SaveIcon,
+    TrashIcon
 } from './components/Icons';
 
 function App() {
@@ -40,15 +44,25 @@ function App() {
   
   const [drawerState, setDrawerState] = useState<{
       isOpen: boolean;
-      mode: 'code' | 'variations' | null;
+      mode: 'code' | 'variations' | 'edit-css' | 'library' | 'save-dialog' | null;
       title: string;
       data: any; 
   }>({ isOpen: false, mode: null, title: '', data: null });
 
   const [componentVariations, setComponentVariations] = useState<ComponentVariation[]>([]);
+  const [library, setLibrary] = useState<SavedComponent[]>(() => {
+      const saved = localStorage.getItem('flash_ui_library');
+      return saved ? JSON.parse(saved) : [];
+  });
+
+  const [saveForm, setSaveForm] = useState({ name: '', category: 'General' });
 
   const inputRef = useRef<HTMLInputElement>(null);
   const gridScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+      localStorage.setItem('flash_ui_library', JSON.stringify(library));
+  }, [library]);
 
   useEffect(() => {
       inputRef.current?.focus();
@@ -254,6 +268,74 @@ Required JSON Output Format (stream ONE object per line):
           const artifact = currentSession.artifacts[focusedArtifactIndex];
           setDrawerState({ isOpen: true, mode: 'code', title: 'Source Code', data: artifact.html });
       }
+  };
+
+  const extractCSS = (html: string) => {
+      const match = html.match(/<style>([\s\S]*?)<\/style>/);
+      return match ? match[1].trim() : '';
+  };
+
+  const injectCSS = (html: string, newCSS: string) => {
+      if (html.includes('<style>')) {
+          return html.replace(/<style>([\s\S]*?)<\/style>/, `<style>\n${newCSS}\n</style>`);
+      } else {
+          // If no style tag, inject before the first tag or at the end of head if exists
+          return `<style>\n${newCSS}\n</style>\n${html}`;
+      }
+  };
+
+  const handleEditCSS = () => {
+      const currentSession = sessions[currentSessionIndex];
+      if (currentSession && focusedArtifactIndex !== null) {
+          const artifact = currentSession.artifacts[focusedArtifactIndex];
+          const css = extractCSS(artifact.html);
+          setDrawerState({ isOpen: true, mode: 'edit-css', title: 'Edit Styles', data: css });
+      }
+  };
+
+  const handleCSSChange = (newCSS: string) => {
+      if (focusedArtifactIndex === null) return;
+      setSessions(prev => prev.map((sess, i) => 
+          i === currentSessionIndex ? {
+              ...sess,
+              artifacts: sess.artifacts.map((art, j) => 
+                  j === focusedArtifactIndex ? { ...art, html: injectCSS(art.html, newCSS) } : art
+              )
+          } : sess
+      ));
+  };
+
+  const handleOpenSaveDialog = () => {
+    const currentSession = sessions[currentSessionIndex];
+    if (currentSession && focusedArtifactIndex !== null) {
+        const artifact = currentSession.artifacts[focusedArtifactIndex];
+        setSaveForm({ name: artifact.styleName, category: 'General' });
+        setDrawerState({ isOpen: true, mode: 'save-dialog', title: 'Save to Library', data: null });
+    }
+  };
+
+  const handleSaveToLibrary = () => {
+      const currentSession = sessions[currentSessionIndex];
+      if (currentSession && focusedArtifactIndex !== null) {
+          const artifact = currentSession.artifacts[focusedArtifactIndex];
+          const newSaved: SavedComponent = {
+              id: generateId(),
+              name: saveForm.name || artifact.styleName,
+              category: saveForm.category || 'General',
+              html: artifact.html,
+              timestamp: Date.now()
+          };
+          setLibrary(prev => [newSaved, ...prev]);
+          setDrawerState(s => ({ ...s, isOpen: false }));
+      }
+  };
+
+  const handleOpenLibrary = () => {
+      setDrawerState({ isOpen: true, mode: 'library', title: 'Component Library', data: library });
+  };
+
+  const handleDeleteSaved = (id: string) => {
+      setLibrary(prev => prev.filter(c => c.id !== id));
   };
 
   const handleExport = useCallback(() => {
@@ -469,11 +551,34 @@ Return ONLY RAW HTML. No markdown fences.
       }
   }
 
+  const groupedLibrary = useMemo(() => {
+      return library.reduce((acc, comp) => {
+          const cat = comp.category || 'General';
+          if (!acc[cat]) acc[cat] = [];
+          acc[cat].push(comp);
+          return acc;
+      }, {} as Record<string, SavedComponent[]>);
+  }, [library]);
+
+  const handleLibraryItemClick = (comp: SavedComponent) => {
+    if (focusedArtifactIndex !== null) {
+        applyVariation(comp.html);
+    } else {
+        handleSendMessage(comp.name);
+    }
+    setDrawerState(s => ({...s, isOpen: false}));
+  };
+
   return (
     <>
-        <a href="https://x.com/ammaar" target="_blank" rel="noreferrer" className={`creator-credit ${hasStarted ? 'hide-on-mobile' : ''}`}>
-            created by @ammaar
-        </a>
+        <div className="top-nav-bar">
+            <a href="https://x.com/ammaar" target="_blank" rel="noreferrer" className={`creator-credit-nav ${hasStarted ? 'hide-on-mobile' : ''}`}>
+                created by @ammaar
+            </a>
+            <button className="library-nav-toggle" onClick={handleOpenLibrary}>
+                <LibraryIcon /> Library ({library.length})
+            </button>
+        </div>
 
         <SideDrawer 
             isOpen={drawerState.isOpen} 
@@ -490,6 +595,19 @@ Return ONLY RAW HTML. No markdown fences.
             {drawerState.mode === 'code' && (
                 <pre className="code-block"><code>{drawerState.data}</code></pre>
             )}
+
+            {drawerState.mode === 'edit-css' && (
+                <div className="css-editor-container">
+                    <p className="editor-hint">Changes apply instantly to the focused component.</p>
+                    <textarea 
+                        className="css-textarea"
+                        /* FIX: Safely access focused artifact HTML for extractCSS */
+                        value={sessions[currentSessionIndex]?.artifacts[focusedArtifactIndex!] ? extractCSS(sessions[currentSessionIndex].artifacts[focusedArtifactIndex!].html) : ''}
+                        onChange={(e) => handleCSSChange(e.target.value)}
+                        spellCheck={false}
+                    />
+                </div>
+            )}
             
             {drawerState.mode === 'variations' && (
                 <div className="sexy-grid">
@@ -501,6 +619,67 @@ Return ONLY RAW HTML. No markdown fences.
                              <div className="sexy-label">{v.name}</div>
                          </div>
                     ))}
+                </div>
+            )}
+
+            {drawerState.mode === 'save-dialog' && (
+                <div className="save-dialog-form">
+                    <div className="form-group">
+                        <label>Component Name</label>
+                        <input 
+                            type="text" 
+                            value={saveForm.name} 
+                            onChange={(e) => setSaveForm(prev => ({ ...prev, name: e.target.value }))}
+                            placeholder="e.g. My Awesome Card"
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Category</label>
+                        <input 
+                            type="text" 
+                            value={saveForm.category} 
+                            onChange={(e) => setSaveForm(prev => ({ ...prev, category: e.target.value }))}
+                            placeholder="e.g. Cards, Buttons, Layouts"
+                        />
+                    </div>
+                    <button className="confirm-save-btn" onClick={handleSaveToLibrary}>
+                        Confirm Save
+                    </button>
+                </div>
+            )}
+
+            {drawerState.mode === 'library' && (
+                <div className="library-container">
+                    {library.length === 0 ? (
+                        <div className="empty-library-msg">
+                            Your library is empty. Save components from the action bar.
+                        </div>
+                    ) : (
+                        Object.entries(groupedLibrary).map(([cat, comps]) => (
+                            <div key={cat} className="library-section">
+                                <h3 className="library-section-title">{cat}</h3>
+                                <div className="library-items-grid">
+                                    {/* FIX: Explicitly cast 'comps' to SavedComponent[] to resolve 'unknown' type error on map */}
+                                    {(comps as SavedComponent[]).map((v) => (
+                                        <div key={v.id} className="sexy-card library-card" onClick={() => handleLibraryItemClick(v)}>
+                                            <div className="sexy-preview mini">
+                                                <iframe srcDoc={v.html} title={v.name} sandbox="allow-scripts allow-same-origin" />
+                                            </div>
+                                            <div className="sexy-label mini">
+                                                <span>{v.name}</span>
+                                                <button className="delete-saved-btn" onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteSaved(v.id);
+                                                }} title="Delete from library">
+                                                    <TrashIcon />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
             )}
         </SideDrawer>
@@ -540,6 +719,7 @@ Return ONLY RAW HTML. No markdown fences.
                                     return (
                                         <ArtifactCard 
                                             key={artifact.id}
+                                            index={aIndex}
                                             artifact={artifact}
                                             isFocused={isFocused}
                                             onClick={() => setFocusedArtifactIndex(aIndex)}
@@ -574,11 +754,17 @@ Return ONLY RAW HTML. No markdown fences.
                     <button onClick={handleGenerateVariations} disabled={isLoading}>
                         <SparklesIcon /> Variations
                     </button>
+                    <button onClick={handleEditCSS}>
+                        <EditIcon /> Edit CSS
+                    </button>
                     <button onClick={handleShowCode}>
                         <CodeIcon /> Source
                     </button>
                     <button onClick={handleExport}>
                         <DownloadIcon /> Export
+                    </button>
+                    <button onClick={handleOpenSaveDialog} className="save-btn">
+                        <SaveIcon /> Save
                     </button>
                  </div>
             </div>
