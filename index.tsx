@@ -10,9 +10,9 @@ import { GoogleGenAI } from '@google/genai';
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 
-import { Artifact, Session, ComponentVariation, LayoutOption, SavedComponent } from './types';
+import { Artifact, Session, ComponentVariation, LayoutOption, SavedComponent, Theme } from './types';
 import { INITIAL_PLACEHOLDERS } from './constants';
-import { generateId } from './utils';
+import { generateId, withRetry } from './utils';
 
 import DottedGlowBackground from './components/DottedGlowBackground';
 import ArtifactCard from './components/ArtifactCard';
@@ -29,7 +29,11 @@ import {
     EditIcon,
     LibraryIcon,
     SaveIcon,
-    TrashIcon
+    TrashIcon,
+    SunIcon,
+    MoonIcon,
+    ContrastIcon,
+    FileTextIcon
 } from './components/Icons';
 
 function App() {
@@ -38,13 +42,18 @@ function App() {
   const [focusedArtifactIndex, setFocusedArtifactIndex] = useState<number | null>(null);
   
   const [inputValue, setInputValue] = useState<string>('');
+  const [librarySearchQuery, setLibrarySearchQuery] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [placeholders, setPlaceholders] = useState<string[]>(INITIAL_PLACEHOLDERS);
   
+  const [theme, setTheme] = useState<Theme>(() => {
+    return (localStorage.getItem('flash_ui_theme') as Theme) || 'dark';
+  });
+
   const [drawerState, setDrawerState] = useState<{
       isOpen: boolean;
-      mode: 'code' | 'variations' | 'edit-css' | 'library' | 'save-dialog' | null;
+      mode: 'code' | 'variations' | 'edit-css' | 'library' | 'save-dialog' | 'export-options' | null;
       title: string;
       data: any; 
   }>({ isOpen: false, mode: null, title: '', data: null });
@@ -63,6 +72,11 @@ function App() {
   useEffect(() => {
       localStorage.setItem('flash_ui_library', JSON.stringify(library));
   }, [library]);
+
+  useEffect(() => {
+    localStorage.setItem('flash_ui_theme', theme);
+    document.body.setAttribute('data-theme', theme);
+  }, [theme]);
 
   useEffect(() => {
       inputRef.current?.focus();
@@ -93,7 +107,7 @@ function App() {
               const apiKey = process.env.API_KEY;
               if (!apiKey) return;
               const ai = new GoogleGenAI({ apiKey });
-              const response = await ai.models.generateContent({
+              const response = await withRetry(() => ai.models.generateContent({
                   model: 'gemini-3-flash-preview',
                   contents: { 
                       role: 'user', 
@@ -101,7 +115,7 @@ function App() {
                           text: 'Generate 20 creative, short, diverse UI component prompts (e.g. "bioluminescent task list"). Return ONLY a raw JSON array of strings. IP SAFEGUARD: Avoid referencing specific famous artists, movies, or brands.' 
                       }] 
                   }
-              });
+              }));
               const text = response.text || '[]';
               const jsonMatch = text.match(/\[[\s\S]*\]/);
               if (jsonMatch) {
@@ -231,11 +245,11 @@ Required JSON Output Format (stream ONE object per line):
 \`{ "name": "Persona Name", "html": "..." }\`
         `.trim();
 
-        const responseStream = await ai.models.generateContentStream({
+        const responseStream = await withRetry(() => ai.models.generateContentStream({
             model: 'gemini-3-flash-preview',
              contents: [{ parts: [{ text: prompt }], role: 'user' }],
              config: { temperature: 1.2 }
-        });
+        }));
 
         for await (const variation of parseJsonStream(responseStream)) {
             if (variation.name && variation.html) {
@@ -275,11 +289,14 @@ Required JSON Output Format (stream ONE object per line):
       return match ? match[1].trim() : '';
   };
 
+  const extractHTMLBody = (html: string) => {
+      return html.replace(/<style>([\s\S]*?)<\/style>/, '').trim();
+  };
+
   const injectCSS = (html: string, newCSS: string) => {
       if (html.includes('<style>')) {
           return html.replace(/<style>([\s\S]*?)<\/style>/, `<style>\n${newCSS}\n</style>`);
       } else {
-          // If no style tag, inject before the first tag or at the end of head if exists
           return `<style>\n${newCSS}\n</style>\n${html}`;
       }
   };
@@ -331,6 +348,7 @@ Required JSON Output Format (stream ONE object per line):
   };
 
   const handleOpenLibrary = () => {
+      setLibrarySearchQuery('');
       setDrawerState({ isOpen: true, mode: 'library', title: 'Component Library', data: library });
   };
 
@@ -338,21 +356,59 @@ Required JSON Output Format (stream ONE object per line):
       setLibrary(prev => prev.filter(c => c.id !== id));
   };
 
-  const handleExport = useCallback(() => {
+  const handleOpenExportDialog = () => {
+      const currentSession = sessions[currentSessionIndex];
+      if (currentSession && focusedArtifactIndex !== null) {
+          setDrawerState({ isOpen: true, mode: 'export-options', title: 'Export Options', data: null });
+      }
+  };
+
+  const downloadFile = (content: string, filename: string, type: string) => {
+      const blob = new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+  };
+
+  const handleExportSingle = () => {
     const currentSession = sessions[currentSessionIndex];
     if (currentSession && focusedArtifactIndex !== null) {
         const artifact = currentSession.artifacts[focusedArtifactIndex];
-        const blob = new Blob([artifact.html], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `flash-ui-${artifact.styleName.replace(/\s+/g, '-').toLowerCase()}-${artifact.id}.html`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        downloadFile(artifact.html, `flash-ui-${artifact.styleName.toLowerCase().replace(/\s+/g, '-')}.html`, 'text/html');
     }
-  }, [sessions, currentSessionIndex, focusedArtifactIndex]);
+  };
+
+  const handleExportBundle = () => {
+    const currentSession = sessions[currentSessionIndex];
+    if (currentSession && focusedArtifactIndex !== null) {
+        const artifact = currentSession.artifacts[focusedArtifactIndex];
+        const css = extractCSS(artifact.html);
+        const html = extractHTMLBody(artifact.html);
+        const baseName = `flash-ui-${artifact.styleName.toLowerCase().replace(/\s+/g, '-')}`;
+        
+        // In a real separate file export, HTML would link to CSS. 
+        const htmlFileContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    ${html}
+</body>
+</html>`;
+        
+        downloadFile(htmlFileContent, `${baseName}.html`, 'text/html');
+        downloadFile(css, `style.css`, 'text/css');
+        alert("Both files downloaded separately. Place them in the same folder.");
+    }
+  };
 
   const handleSendMessage = useCallback(async (manualPrompt?: string) => {
     const promptToUse = manualPrompt || inputValue;
@@ -404,10 +460,10 @@ Never use artist or brand names. Use physical and material metaphors.
 Return ONLY a raw JSON array of 3 *NEW*, creative names for these directions (e.g. ["Tactile Risograph Press", "Kinetic Silhouette Balance", "Primary Pigment Gridwork"]).
         `.trim();
 
-        const styleResponse = await ai.models.generateContent({
+        const styleResponse = await withRetry(() => ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: { role: 'user', parts: [{ text: stylePrompt }] }
-        });
+        }));
 
         let generatedStyles: string[] = [];
         const styleText = styleResponse.text || '[]';
@@ -459,10 +515,10 @@ You are Flash UI. Create a stunning, high-fidelity UI component for: "${trimmedI
 Return ONLY RAW HTML. No markdown fences.
           `.trim();
           
-                const responseStream = await ai.models.generateContentStream({
+                const responseStream = await withRetry(() => ai.models.generateContentStream({
                     model: 'gemini-3-flash-preview',
                     contents: [{ parts: [{ text: prompt }], role: "user" }],
-                });
+                }));
 
                 let accumulatedHtml = '';
                 for await (const chunk of responseStream) {
@@ -496,11 +552,16 @@ Return ONLY RAW HTML. No markdown fences.
 
             } catch (e: any) {
                 console.error('Error generating artifact:', e);
+                const isRateLimit = e?.message?.includes('429') || e?.message?.includes('RESOURCE_EXHAUSTED');
+                const errorMsg = isRateLimit 
+                    ? "Rate limit exceeded. Try again in a few seconds." 
+                    : `Error: ${e.message}`;
+
                 setSessions(prev => prev.map(sess => 
                     sess.id === sessionId ? {
                         ...sess,
                         artifacts: sess.artifacts.map(art => 
-                            art.id === artifact.id ? { ...art, html: `<div style="color: #ff6b6b; padding: 20px;">Error: ${e.message}</div>`, status: 'error' } : art
+                            art.id === artifact.id ? { ...art, html: `<div style="color: #ff6b6b; padding: 20px;">${errorMsg}</div>`, status: 'error' } : art
                         )
                     } : sess
                 ));
@@ -509,8 +570,10 @@ Return ONLY RAW HTML. No markdown fences.
 
         await Promise.all(placeholderArtifacts.map((art, i) => generateArtifact(art, generatedStyles[i])));
 
-    } catch (e) {
+    } catch (e: any) {
         console.error("Fatal error in generation process", e);
+        // Provide visual feedback even for fatal errors
+        setIsLoading(false);
     } finally {
         setIsLoading(false);
         setTimeout(() => inputRef.current?.focus(), 100);
@@ -533,6 +596,12 @@ Return ONLY RAW HTML. No markdown fences.
     }
   };
 
+  const cycleTheme = () => {
+    const themes: Theme[] = ['dark', 'light', 'high-contrast'];
+    const nextIndex = (themes.indexOf(theme) + 1) % themes.length;
+    setTheme(themes[nextIndex]);
+  };
+
   const isLoadingDrawer = isLoading && drawerState.mode === 'variations' && componentVariations.length === 0;
 
   const hasStarted = sessions.length > 0 || isLoading;
@@ -551,14 +620,23 @@ Return ONLY RAW HTML. No markdown fences.
       }
   }
 
+  const filteredLibrary = useMemo(() => {
+      if (!librarySearchQuery.trim()) return library;
+      const query = librarySearchQuery.toLowerCase();
+      return library.filter(comp => 
+          comp.name.toLowerCase().includes(query) || 
+          comp.category.toLowerCase().includes(query)
+      );
+  }, [library, librarySearchQuery]);
+
   const groupedLibrary = useMemo(() => {
-      return library.reduce((acc, comp) => {
+      return filteredLibrary.reduce((acc, comp) => {
           const cat = comp.category || 'General';
           if (!acc[cat]) acc[cat] = [];
           acc[cat].push(comp);
           return acc;
       }, {} as Record<string, SavedComponent[]>);
-  }, [library]);
+  }, [filteredLibrary]);
 
   const handleLibraryItemClick = (comp: SavedComponent) => {
     if (focusedArtifactIndex !== null) {
@@ -569,12 +647,23 @@ Return ONLY RAW HTML. No markdown fences.
     setDrawerState(s => ({...s, isOpen: false}));
   };
 
+  const getThemeIcon = () => {
+    if (theme === 'light') return <SunIcon />;
+    if (theme === 'high-contrast') return <ContrastIcon />;
+    return <MoonIcon />;
+  };
+
   return (
     <>
         <div className="top-nav-bar">
-            <a href="https://x.com/ammaar" target="_blank" rel="noreferrer" className={`creator-credit-nav ${hasStarted ? 'hide-on-mobile' : ''}`}>
-                created by @ammaar
-            </a>
+            <div className="nav-left">
+              <a href="https://x.com/ammaar" target="_blank" rel="noreferrer" className={`creator-credit-nav ${hasStarted ? 'hide-on-mobile' : ''}`}>
+                  created by @ammaar
+              </a>
+              <button className="theme-nav-toggle" onClick={cycleTheme} title="Change Theme">
+                  {getThemeIcon()}
+              </button>
+            </div>
             <button className="library-nav-toggle" onClick={handleOpenLibrary}>
                 <LibraryIcon /> Library ({library.length})
             </button>
@@ -601,7 +690,6 @@ Return ONLY RAW HTML. No markdown fences.
                     <p className="editor-hint">Changes apply instantly to the focused component.</p>
                     <textarea 
                         className="css-textarea"
-                        /* FIX: Safely access focused artifact HTML for extractCSS */
                         value={sessions[currentSessionIndex]?.artifacts[focusedArtifactIndex!] ? extractCSS(sessions[currentSessionIndex].artifacts[focusedArtifactIndex!].html) : ''}
                         onChange={(e) => handleCSSChange(e.target.value)}
                         spellCheck={false}
@@ -648,21 +736,53 @@ Return ONLY RAW HTML. No markdown fences.
                 </div>
             )}
 
+            {drawerState.mode === 'export-options' && (
+                <div className="export-dialog">
+                    <p className="export-hint">Choose your preferred format for exporting the code.</p>
+                    <div className="export-buttons-stack">
+                        <button className="export-option-btn" onClick={handleExportSingle}>
+                            <div className="export-icon"><FileTextIcon /></div>
+                            <div className="export-info">
+                                <strong>Single HTML File</strong>
+                                <span>Includes embedded CSS styles. Easy to share.</span>
+                            </div>
+                        </button>
+                        <button className="export-option-btn" onClick={handleExportBundle}>
+                            <div className="export-icon"><CodeIcon /></div>
+                            <div className="export-info">
+                                <strong>Code Bundle (Separate Files)</strong>
+                                <span>Download HTML and CSS as separate files. Professional.</span>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {drawerState.mode === 'library' && (
                 <div className="library-container">
-                    {library.length === 0 ? (
+                    <div className="library-search-wrapper">
+                        <input 
+                            type="text" 
+                            className="library-search-input"
+                            placeholder="Search by name or category..."
+                            value={librarySearchQuery}
+                            onChange={(e) => setLibrarySearchQuery(e.target.value)}
+                        />
+                    </div>
+                    {filteredLibrary.length === 0 ? (
                         <div className="empty-library-msg">
-                            Your library is empty. Save components from the action bar.
+                            {library.length === 0 
+                                ? "Your library is empty. Save components from the action bar."
+                                : "No components match your search."}
                         </div>
                     ) : (
                         Object.entries(groupedLibrary).map(([cat, comps]) => (
                             <div key={cat} className="library-section">
                                 <h3 className="library-section-title">{cat}</h3>
                                 <div className="library-items-grid">
-                                    {/* FIX: Explicitly cast 'comps' to SavedComponent[] to resolve 'unknown' type error on map */}
                                     {(comps as SavedComponent[]).map((v) => (
-                                        <div key={v.id} className="sexy-card library-card" onClick={() => handleLibraryItemClick(v)}>
-                                            <div className="sexy-preview mini">
+                                        <div key={v.id} className="sexy-card library-card large-preview" onClick={() => handleLibraryItemClick(v)}>
+                                            <div className="sexy-preview interactive-preview">
                                                 <iframe srcDoc={v.html} title={v.name} sandbox="allow-scripts allow-same-origin" />
                                             </div>
                                             <div className="sexy-label mini">
@@ -688,8 +808,8 @@ Return ONLY RAW HTML. No markdown fences.
             <DottedGlowBackground 
                 gap={24} 
                 radius={1.5} 
-                color="rgba(255, 255, 255, 0.02)" 
-                glowColor="rgba(255, 255, 255, 0.15)" 
+                color={theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255, 255, 255, 0.02)'} 
+                glowColor={theme === 'light' ? 'rgba(0,0,0,0.1)' : 'rgba(255, 255, 255, 0.15)'} 
                 speedScale={0.5} 
             />
 
@@ -760,7 +880,7 @@ Return ONLY RAW HTML. No markdown fences.
                     <button onClick={handleShowCode}>
                         <CodeIcon /> Source
                     </button>
-                    <button onClick={handleExport}>
+                    <button onClick={handleOpenExportDialog}>
                         <DownloadIcon /> Export
                     </button>
                     <button onClick={handleOpenSaveDialog} className="save-btn">
